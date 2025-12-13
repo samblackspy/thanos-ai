@@ -18,19 +18,31 @@ inputs:
 
 tasks:
   - id: brain_strategy
+    type: io.kestra.plugin.core.http.Request
+    uri: "https://api.together.xyz/v1/chat/completions"
+    method: POST
+    contentType: "application/json"
+    headers:
+      Authorization: "Bearer {{ secret('TOGETHER_API_KEY') }}"
+    body: |
+      {
+        "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are a Senior Software Engineer. Return a single JSON object only (no markdown, no extra text). Required keys: repo_full_name, issue_title, issue_body, hypothesis, commands_to_try, files_of_interest, edit_plan, acceptance_criteria, handoff_prompt. The handoff_prompt must be a concise, direct instruction to Cline to implement the fix in the repo and run tests."
+          },
+          {
+            "role": "user",
+            "content": "Repo: {{ inputs.payload.repository.full_name ?? '' }}\nIssue: {{ inputs.payload.issue.title ?? '' }}\nBody: {{ inputs.payload.issue.body ?? '' }}\nPrevious failure log (if any): {{ inputs.previous_failure_log ?? '' }}"
+          }
+        ],
+        "response_format": { "type": "json_object" }
+      }
+
+  - id: brain_handoff_prompt_b64
     type: io.kestra.plugin.core.debug.Return
-    format: |
-      Attempt {{ inputs.attempt_number }}.
-      Investigate the issue payload and try to fix it.
-      If you fail, explain why and summarize what you tried.
-      Previous failure log (if any):
-      {{ inputs.previous_failure_log ?? '' }}
-
-      Repo:
-      {{ inputs.payload.repository.full_name ?? '' }}
-
-      Issue:
-      {{ inputs.payload.issue.title ?? '' }}
+    format: "{{ fromJson(fromJson(outputs.brain_strategy.body).choices[0].message.content).handoff_prompt | base64encode }}"
 
   - id: hand_cline
     type: io.kestra.plugin.scripts.shell.Commands
@@ -93,9 +105,12 @@ tasks:
           : > "{{ workingDir }}/patch.diff"
 
           echo "Running Cline attempt={{ inputs.attempt_number }}" | tee -a cline.log
+          prompt_b64="{{ outputs.brain_handoff_prompt_b64.value }}"
+          echo "$prompt_b64" | base64 -d > "{{ workingDir }}/cline_prompt.txt"
+          prompt="$(cat \"{{ workingDir }}/cline_prompt.txt\")"
           (
             cd "$repo_dir" &&
-            printf "%s\n" "{{ outputs.brain_strategy.value }}" | cline -y -o
+            cline -y -o "$prompt"
           ) 2>&1 | tee -a cline.log
           code=$?
 

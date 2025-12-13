@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: kestra
+      POSTGRES_USER: kestra
+      POSTGRES_PASSWORD: k3str4
+    ports:
+      - "5432:5432"
+
+  kestra:
+    image: kestra/kestra:latest
+    user: "root"
+    command: server standalone --worker-thread=128 --config /etc/config/application.yaml
+    volumes:
+      - kestra-data:/app/storage
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/kestra-wd:/tmp/kestra-wd
+      - ./kestra/application.yaml:/etc/config/application.yaml
+      - ./kestra/flows:/opt/kestra/flows
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_started
+
+  thanos-runner:
+    image: thanos/kitchen-sink-runner:latest
+    build:
+      context: ./runner
+    command: ["tail", "-f", "/dev/null"]
+
+volumes:
+  kestra-data:
