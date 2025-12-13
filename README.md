@@ -4,7 +4,7 @@
 
 ### Prereqs
 - Docker + Docker Compose
-- API key for a Cline-supported provider (this scaffold uses `OPENROUTER_API_KEY`)
+- API key for a Cline-supported provider (this scaffold uses `OPENAI_API_KEY`)
 
 ### 1) Start Kestra + Postgres
 
@@ -20,7 +20,8 @@ Open:
 Create these secrets in the Kestra UI (Namespace: `thanos` or global):
 
 - `WEBHOOK_KEY`
-- `OPENROUTER_API_KEY`
+- `OPENAI_API_KEY`
+- `TOGETHER_API_KEY`
 - `GITHUB_TOKEN` (optional; required for private repos)
 
 ### 3) Trigger the flow

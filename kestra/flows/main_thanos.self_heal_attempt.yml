@@ -58,7 +58,8 @@ tasks:
       type: io.kestra.plugin.scripts.runner.docker.Docker
       containerImage: thanos/kitchen-sink-runner:latest
     env:
-      OPENROUTER_API_KEY: "{{ secret('OPENROUTER_API_KEY') ?? '' }}"
+      OPENAI_API_KEY: "{{ secret('OPENAI_API_KEY') ?? '' }}"
+      GITHUB_TOKEN: "{{ secret('GITHUB_TOKEN') ?? '' }}"
     outputFiles:
       - cline.log
       - failure.log
@@ -107,8 +108,10 @@ tasks:
             exit 0
           fi
 
-          if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-            cline config set open-router-api-key="$OPENROUTER_API_KEY" || true
+          if [ -n "${OPENAI_API_KEY:-}" ]; then
+            export OPENAI_API_KEY
+            cline auth openai "$OPENAI_API_KEY" || true
+            cline config set open-ai-api-key="$OPENAI_API_KEY" || cline config set openai-api-key="$OPENAI_API_KEY" || true
           fi
 
           : > "{{ workingDir }}/patch.diff"
