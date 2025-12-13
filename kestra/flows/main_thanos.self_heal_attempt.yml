@@ -17,6 +17,14 @@ inputs:
     required: false
 
 tasks:
+  - id: brain_user_message
+    type: io.kestra.plugin.core.debug.Return
+    format: |
+      Repo: {{ inputs.payload.repository.full_name ?? '' }}
+      Issue: {{ inputs.payload.issue.title ?? '' }}
+      Body: {{ inputs.payload.issue.body ?? '' }}
+      Previous failure log (if any): {{ inputs.previous_failure_log ?? '' }}
+
   - id: brain_strategy
     type: io.kestra.plugin.core.http.Request
     uri: "https://api.together.xyz/v1/chat/completions"
@@ -34,7 +42,7 @@ tasks:
           },
           {
             "role": "user",
-            "content": "Repo: {{ inputs.payload.repository.full_name ?? '' }}\nIssue: {{ inputs.payload.issue.title ?? '' }}\nBody: {{ inputs.payload.issue.body ?? '' }}\nPrevious failure log (if any): {{ inputs.previous_failure_log ?? '' }}"
+            "content": {{ outputs.brain_user_message.value | toJson }}
           }
         ],
         "response_format": { "type": "json_object" }
@@ -70,6 +78,7 @@ tasks:
 
           repo_full_name="{{ inputs.payload.repository.full_name ?? '' }}"
           repo_clone_url="{{ inputs.payload.repository.clone_url ?? '' }}"
+          issue_number="{{ inputs.payload.issue.number ?? '' }}"
 
           if [ -z "$repo_clone_url" ] && [ -n "$repo_full_name" ]; then
             repo_clone_url="https://github.com/${repo_full_name}.git"
@@ -113,6 +122,32 @@ tasks:
             cline -y -o "$prompt"
           ) 2>&1 | tee -a cline.log
           code=$?
+
+          if [ "$code" -eq 0 ]; then
+            if git -C repo diff --quiet; then
+              echo "No changes detected; skipping commit/push" | tee -a cline.log
+            else
+              if [ -z "${GITHUB_TOKEN:-}" ]; then
+                echo "GITHUB_TOKEN not set; skipping commit/push" | tee -a cline.log
+              else
+                branch="fix/issue-${issue_number:-unknown}-attempt-{{ inputs.attempt_number }}"
+                (
+                  cd "$repo_dir" &&
+                  git config user.email "bot@thanos.ai" &&
+                  git config user.name "ThanosBot" &&
+                  git checkout -b "$branch" &&
+                  git add -A &&
+                  git commit -m "Fix issue #${issue_number:-unknown}" &&
+                  git push origin "$branch"
+                ) 2>&1 | tee -a cline.log
+
+                if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+                  echo "Push failed" | tee -a cline.log
+                  code=4
+                fi
+              fi
+            fi
+          fi
 
           (
             cd "{{ workingDir }}" &&
