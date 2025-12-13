@@ -1,0 +1,122 @@
+id: self_heal_attempt
+namespace: thanos
+
+description: |
+  One attempt of: Brain strategy -> Cline execution.
+  Outputs minimal fields needed for retry logic.
+
+inputs:
+  - id: payload
+    type: JSON
+    required: true
+  - id: attempt_number
+    type: INT
+    required: true
+  - id: previous_failure_log
+    type: STRING
+    required: false
+
+tasks:
+  - id: brain_strategy
+    type: io.kestra.plugin.core.debug.Return
+    format: |
+      Attempt {{ inputs.attempt_number }}.
+      Investigate the issue payload and try to fix it.
+      If you fail, explain why and summarize what you tried.
+      Previous failure log (if any):
+      {{ inputs.previous_failure_log ?? '' }}
+
+      Repo:
+      {{ inputs.payload.repository.full_name ?? '' }}
+
+      Issue:
+      {{ inputs.payload.issue.title ?? '' }}
+
+  - id: hand_cline
+    type: io.kestra.plugin.scripts.shell.Commands
+    taskRunner:
+      type: io.kestra.plugin.scripts.runner.docker.Docker
+      containerImage: thanos/kitchen-sink-runner:latest
+    env:
+      OPENROUTER_API_KEY: "{{ secret('OPENROUTER_API_KEY') ?? '' }}"
+    outputFiles:
+      - cline.log
+      - failure.log
+      - patch.diff
+    commands:
+      - |
+        bash -lc '
+          set +e
+          set -o pipefail
+
+          export CLINE_DIR="{{ workingDir }}/.cline"
+          mkdir -p "$CLINE_DIR"
+
+          repo_dir="{{ workingDir }}/repo"
+          rm -rf "$repo_dir"
+          mkdir -p "$repo_dir"
+
+          repo_full_name="{{ inputs.payload.repository.full_name ?? '' }}"
+          repo_clone_url="{{ inputs.payload.repository.clone_url ?? '' }}"
+
+          if [ -z "$repo_clone_url" ] && [ -n "$repo_full_name" ]; then
+            repo_clone_url="https://github.com/${repo_full_name}.git"
+          fi
+
+          if [ -z "$repo_clone_url" ]; then
+            echo "No repository clone URL found in payload" | tee -a cline.log
+            echo "::{\"outputs\":{\"exit_code\":2}}::"
+            echo "exit_code=2" | tee failure.log
+            exit 0
+          fi
+
+          if [ -n "${GITHUB_TOKEN:-}" ] && [ -n "$repo_full_name" ]; then
+            repo_clone_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${repo_full_name}.git"
+          fi
+
+          (
+            cd "{{ workingDir }}" &&
+            GIT_TERMINAL_PROMPT=0 git clone --depth 50 "$repo_clone_url" repo
+          ) 2>&1 | tee -a cline.log
+
+          if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+            echo "Repo clone failed" | tee -a cline.log
+            echo "::{\"outputs\":{\"exit_code\":3}}::"
+            echo "exit_code=3" | tee failure.log
+            exit 0
+          fi
+
+          if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+            cline config set open-router-api-key="$OPENROUTER_API_KEY" || true
+          fi
+
+          : > "{{ workingDir }}/patch.diff"
+
+          echo "Running Cline attempt={{ inputs.attempt_number }}" | tee -a cline.log
+          (
+            cd "$repo_dir" &&
+            printf "%s\n" "{{ outputs.brain_strategy.value }}" | cline -y -o
+          ) 2>&1 | tee -a cline.log
+          code=$?
+
+          (
+            cd "{{ workingDir }}" &&
+            git -C repo diff > patch.diff
+          ) 2>/dev/null || true
+
+          echo "exit_code=${code}" | tee failure.log
+          echo "::{\"outputs\":{\"exit_code\":${code}}}::"
+          exit 0
+        '
+
+  - id: collect_failure
+    type: io.kestra.plugin.core.debug.Return
+    format: "{{ read(outputs.hand_cline.outputFiles['cline.log']) }}"
+
+outputs:
+  - id: exit_code
+    type: INT
+    value: "{{ outputs.hand_cline.vars.exit_code }}"
+  - id: failure_log
+    type: STRING
+    value: "{{ outputs.collect_failure.value }}"

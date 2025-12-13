@@ -1,0 +1,41 @@
+id: self_heal_pipeline
+namespace: thanos
+
+description: |
+  Pipeline: Brain (Together strategy JSON) -> Hand (Cline execution) with 1 retry on failure.
+
+inputs:
+  - id: payload
+    type: JSON
+    required: true
+
+variables:
+  max_attempts: 2
+
+tasks:
+  - id: attempt_0
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: thanos
+    flowId: self_heal_attempt
+    wait: true
+    inputs:
+      payload: "{{ inputs.payload }}"
+      attempt_number: 0
+
+  - id: maybe_retry
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ outputs.attempt_0.outputs.exit_code != 0 }}"
+    then:
+      - id: attempt_1
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: thanos
+        flowId: self_heal_attempt
+        wait: true
+        inputs:
+          payload: "{{ inputs.payload }}"
+          attempt_number: 1
+          previous_failure_log: "{{ outputs.attempt_0.outputs.failure_log }}"
+
+  - id: final_exit
+    type: io.kestra.plugin.core.debug.Return
+    format: "{{ outputs.attempt_0.outputs.exit_code != 0 ? outputs.attempt_1.outputs.exit_code : outputs.attempt_0.outputs.exit_code }}"
