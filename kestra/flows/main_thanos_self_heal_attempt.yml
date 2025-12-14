@@ -137,14 +137,19 @@ tasks:
           fi
 
           echo "Running Cline attempt={{ inputs.attempt_number }}" | tee -a "$log_file"
-          prompt_b64="{{ outputs.brain_handoff_prompt_b64.value }}"
-          echo "$prompt_b64" | base64 -d > "{{ workingDir }}/cline_prompt.txt"
-          prompt="$(cat {{ workingDir }}/cline_prompt.txt)"
+          
+          # Create direct prompt from issue
+          prompt="Fix this issue: {{ inputs.payload.issue.title ?? 'bug' }}. Details: {{ inputs.payload.issue.body ?? 'fix the bug' }}. Make the code changes directly without asking questions."
+          echo "Prompt: $prompt" | tee -a "$log_file"
+          
           (
             cd "$repo_dir" &&
-            script -q -e -c "cline -F plain -y -m act -o \"${prompt}\"" /dev/null
-          ) 2>&1 | tee -a "$log_file"
+            cline -F plain --yolo -m act "$prompt" 2>&1
+          ) | tee -a "$log_file"
           code=$?
+          
+          # Check for changes regardless of exit code
+          echo "Cline exited with code $code" | tee -a "$log_file"
 
           if [ "$code" -eq 0 ]; then
             if git -C repo diff --quiet; then
