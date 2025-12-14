@@ -79,63 +79,24 @@ function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
   );
 }
 
-const DEMO_PIPELINES: Pipeline[] = [
-  {
-    id: "6w6714QsAwU01D5gFSDUuZ",
-    issueNumber: 7,
-    issueTitle: "Fix typos in StatusBadge component",
-    repo: "samblackspy/thanos-ai",
-    status: "success",
-    attempts: 1,
-    guardStatus: "success",
-    createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    prUrl: "https://github.com/samblackspy/thanos-ai/pull/2",
-  },
-  {
-    id: "5xW1PELNd4howRqAzSFzo6",
-    issueNumber: 4,
-    issueTitle: "Update README badges",
-    repo: "samblackspy/thanos-ai",
-    status: "success",
-    attempts: 1,
-    guardStatus: "success",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
-  },
-  {
-    id: "4HniHsWRFiWmNbhXXTEQqS",
-    issueNumber: 2,
-    issueTitle: "Add MIT license file",
-    repo: "samblackspy/thanos-ai",
-    status: "success",
-    attempts: 1,
-    guardStatus: "success",
-    createdAt: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
-  },
-];
-
 export default function Home() {
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [usingDemo, setUsingDemo] = useState(false);
 
   const fetchPipelines = async () => {
     setLoading(true);
     try {
       const res = await fetch("/api/pipelines");
       const data = await res.json();
-      if (data.pipelines && data.pipelines.length > 0) {
+      if (data.pipelines) {
         setPipelines(data.pipelines);
         setError(null);
-        setUsingDemo(false);
-      } else {
-        setPipelines(DEMO_PIPELINES);
-        setUsingDemo(true);
-        setError(null);
+      } else if (data.error) {
+        setError(data.error);
       }
     } catch (err) {
-      setPipelines(DEMO_PIPELINES);
-      setUsingDemo(true);
+      setError("Failed to fetch pipelines");
       console.error(err);
     }
     setLoading(false);
@@ -188,12 +149,7 @@ export default function Home() {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8">
-        {usingDemo && (
-          <div className="mb-4 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl text-purple-600 dark:text-purple-400 text-sm">
-            📊 Showing demo data from recent pipeline executions. Connect to local Kestra for live data.
-          </div>
-        )}
-        {error && !usingDemo && (
+        {error && (
           <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
             {error} — Make sure Kestra is running at localhost:8080
           </div>
