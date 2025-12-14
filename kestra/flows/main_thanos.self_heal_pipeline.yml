@@ -44,7 +44,7 @@ tasks:
         type: io.kestra.plugin.scripts.shell.Commands
         taskRunner:
           type: io.kestra.plugin.scripts.runner.docker.Docker
-          containerImage: thanos/kitchen-sink-runner:latest
+          image: thanos/kitchen-sink-runner:latest
         commands:
           - |
             bash -lc 'exit 1'
