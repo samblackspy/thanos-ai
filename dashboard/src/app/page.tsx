@@ -17,14 +17,58 @@ interface Pipeline {
   prUrl?: string;
 }
 
+const DEMO_PIPELINES: Pipeline[] = [
+  {
+    id: "1NqSCaFSw57jiiBVDu9qN2",
+    issueNumber: 7,
+    issueTitle: "Fix typos in StatusBadge component",
+    repo: "samblackspy/thanos-ai",
+    status: "success",
+    attempts: 1,
+    guardStatus: "success",
+    createdAt: "2025-12-14T13:43:00.000Z",
+    prUrl: "https://github.com/samblackspy/thanos-ai/pull/2",
+  },
+  {
+    id: "6w6714QsAwU01D5gFSDUuZ",
+    issueNumber: 4,
+    issueTitle: "Update README badges",
+    repo: "samblackspy/thanos-ai",
+    status: "success",
+    attempts: 1,
+    guardStatus: "success",
+    createdAt: "2025-12-14T13:25:00.000Z",
+  },
+  {
+    id: "5xW1PELNd4howRqAzSFzo6",
+    issueNumber: 2,
+    issueTitle: "Add MIT license file",
+    repo: "samblackspy/thanos-ai",
+    status: "success",
+    attempts: 1,
+    guardStatus: "success",
+    createdAt: "2025-12-14T12:55:00.000Z",
+  },
+  {
+    id: "4HniHsWRFiWmNbhXXTEQqS",
+    issueNumber: 3,
+    issueTitle: "Add CONTRIBUTING.md",
+    repo: "samblackspy/thanos-ai",
+    status: "success",
+    attempts: 1,
+    guardStatus: "success",
+    createdAt: "2025-12-14T12:30:00.000Z",
+  },
+];
+
 function StatusBadge({ status }: { status: PipelineStatus }) {
-  const confg = {
-    running: { icon: Clock, color: "text-blue-500 bg-blue-500/10", label: "Runnng" },
-    success: { icon: CheckCircle2, color: "text-green-500 bg-green-500/10", label: "Sucess" },
-    failed: { icon: XCircle, color: "text-red-500 bg-red-500/10", label: "Faild" },
-    pending: { icon: Clock, color: "text-zinc-400 bg-zinc-400/10", label: "Pendng" },
+  const config = {
+    running: { icon: Clock, color: "text-blue-500 bg-blue-500/10", label: "Running" },
+    success: { icon: CheckCircle2, color: "text-green-500 bg-green-500/10", label: "Success" },
+    failed: { icon: XCircle, color: "text-red-500 bg-red-500/10", label: "Failed" },
+    pending: { icon: Clock, color: "text-zinc-400 bg-zinc-400/10", label: "Pending" },
   };
-  const { icon: Icon, color, label } = confg[status];
+  const { icon: Icon, color, label } = config[status];
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${color}`}>
       <Icon className="w-3.5 h-3.5" />
