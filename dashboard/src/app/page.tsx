@@ -1,4 +1,7 @@
-import { Activity, GitBranch, Shield, Zap, CheckCircle2, XCircle, Clock, ExternalLink } from "lucide-react";
+"use client";
+
+import { useEffect, useState } from "react";
+import { Activity, GitBranch, Shield, Zap, CheckCircle2, XCircle, Clock, ExternalLink, RefreshCw } from "lucide-react";
 
 type PipelineStatus = "running" | "success" | "failed" | "pending";
 
@@ -13,40 +16,6 @@ interface Pipeline {
   createdAt: string;
   prUrl?: string;
 }
-
-const mockPipelines: Pipeline[] = [
-  {
-    id: "1za3kq4zbae4H0hragEsj3",
-    issueNumber: 42,
-    issueTitle: "Fix authentication bug in login flow",
-    repo: "samblackspy/thanos-ai",
-    status: "success",
-    attempts: 1,
-    guardStatus: "success",
-    createdAt: "2024-12-14T10:30:00Z",
-    prUrl: "https://github.com/samblackspy/thanos-ai/pull/43",
-  },
-  {
-    id: "5ZM39zoiNcm0IVnCWOQcGF",
-    issueNumber: 41,
-    issueTitle: "Add rate limiting to API endpoints",
-    repo: "samblackspy/thanos-ai",
-    status: "running",
-    attempts: 0,
-    guardStatus: "pending",
-    createdAt: "2024-12-14T11:00:00Z",
-  },
-  {
-    id: "8XY12abc3def4ghi5jkl6m",
-    issueNumber: 40,
-    issueTitle: "Refactor database connection pooling",
-    repo: "samblackspy/thanos-ai",
-    status: "failed",
-    attempts: 2,
-    guardStatus: "failed",
-    createdAt: "2024-12-14T09:15:00Z",
-  },
-];
 
 function StatusBadge({ status }: { status: PipelineStatus }) {
   const config = {
@@ -111,11 +80,39 @@ function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
 }
 
 export default function Home() {
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchPipelines = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/pipelines");
+      const data = await res.json();
+      if (data.pipelines) {
+        setPipelines(data.pipelines);
+        setError(null);
+      } else if (data.error) {
+        setError(data.error);
+      }
+    } catch (err) {
+      setError("Failed to fetch pipelines");
+      console.error(err);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchPipelines();
+    const interval = setInterval(fetchPipelines, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const stats = {
-    total: mockPipelines.length,
-    success: mockPipelines.filter((p) => p.status === "success").length,
-    running: mockPipelines.filter((p) => p.status === "running").length,
-    failed: mockPipelines.filter((p) => p.status === "failed").length,
+    total: pipelines.length,
+    success: pipelines.filter((p: Pipeline) => p.status === "success").length,
+    running: pipelines.filter((p: Pipeline) => p.status === "running").length,
+    failed: pipelines.filter((p: Pipeline) => p.status === "failed").length,
   };
 
   return (
@@ -131,18 +128,33 @@ export default function Home() {
               <p className="text-xs text-zinc-500">Self-Healing Maintainer</p>
             </div>
           </div>
-          <a
-            href="https://github.com/samblackspy/thanos-ai"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
-          >
-            GitHub
-          </a>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={fetchPipelines}
+              className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw className={`w-4 h-4 text-zinc-500 ${loading ? "animate-spin" : ""}`} />
+            </button>
+            <a
+              href="https://github.com/samblackspy/thanos-ai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
+            >
+              GitHub
+            </a>
+          </div>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8">
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
+            {error} — Make sure Kestra is running at localhost:8080
+          </div>
+        )}
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-4">
             <p className="text-sm text-zinc-500 mb-1">Total Pipelines</p>
@@ -163,11 +175,17 @@ export default function Home() {
         </div>
 
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-white mb-4">Recent Pipelines</h2>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {mockPipelines.map((pipeline) => (
-            <PipelineCard key={pipeline.id} pipeline={pipeline} />
-          ))}
-        </div>
+        {loading && pipelines.length === 0 ? (
+          <div className="text-center py-12 text-zinc-500">Loading...</div>
+        ) : pipelines.length === 0 ? (
+          <div className="text-center py-12 text-zinc-500">No pipelines found. Trigger a webhook to see data here.</div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pipelines.map((pipeline: Pipeline) => (
+              <PipelineCard key={pipeline.id} pipeline={pipeline} />
+            ))}
+          </div>
+        )}
       </main>
 
       <footer className="border-t border-zinc-200 dark:border-zinc-800 mt-12">
