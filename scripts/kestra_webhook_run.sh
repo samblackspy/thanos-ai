@@ -131,6 +131,7 @@ fi
 
 export KESTRA_URL KESTRA_TENANT NAMESPACE KESTRA_USER KESTRA_PASS
 export START_TS="$start_ts"
+export INTAKE_EXECUTION_ID="$intake_id"
 
 # Find the most recent self_heal_attempt execution started after START_TS.
 # We use state histories timestamps since some Kestra responses omit startDate.
@@ -149,6 +150,7 @@ namespace = os.environ.get('NAMESPACE', 'thanos')
 start_ts = os.environ.get('START_TS')
 user = os.environ.get('KESTRA_USER', 'admin@kestra.io')
 passwd = os.environ.get('KESTRA_PASS', 'Admin1234')
+intake_execution_id = os.environ.get('INTAKE_EXECUTION_ID')
 
 ctx = ssl.create_default_context()
 auth = base64.b64encode(f"{user}:{passwd}".encode()).decode()
@@ -181,58 +183,114 @@ def execution_start_dt(ex: dict):
             return dt
     return None
 
-attempt_obj = None
-attempt_id = None
-
-for _ in range(90):
-    search = get_json(f"/api/v1/{tenant}/executions/search?namespace={namespace}&flowId=self_heal_attempt&size=20")
-    results = search.get('results') or []
-
-    candidates = []
-    for r in results:
-        eid = r.get('id')
-        if not eid:
-            continue
-        try:
-            ex = get_json(f"/api/v1/{tenant}/executions/{eid}")
-        except Exception:
-            continue
-        dt = execution_start_dt(ex)
-        if start_dt and dt and dt < start_dt:
-            continue
-        candidates.append((dt or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc), ex))
-
-    candidates.sort(key=lambda t: t[0], reverse=True)
-    if candidates:
-        attempt_obj = candidates[0][1]
-        attempt_id = attempt_obj.get('id')
-        state = (attempt_obj.get('state') or {}).get('current')
+def wait_execution(execution_id: str):
+    ex = None
+    for _ in range(120):
+        ex = get_json(f"/api/v1/{tenant}/executions/{execution_id}")
+        state = (ex.get('state') or {}).get('current')
         if state not in ('CREATED', 'QUEUED', 'RUNNING'):
-            break
+            return ex
+        time.sleep(1)
+    return ex
 
-    time.sleep(2)
 
-if not attempt_obj:
-    print('no_attempt_found_after_trigger')
-    raise SystemExit(1)
+def find_subflow_execution_id(ex: dict, task_id: str):
+    for tr in (ex.get('taskRunList') or []):
+        if tr.get('taskId') != task_id:
+            continue
+        outs = tr.get('outputs') or {}
+        if not isinstance(outs, dict):
+            continue
+        for k in ('executionId', 'execution_id', 'subflowExecutionId', 'subflow_execution_id'):
+            v = outs.get(k)
+            if v:
+                return v
+    return None
 
-print('attempt_execution_id=' + (attempt_id or ''))
-print('attempt_state=' + ((attempt_obj.get('state') or {}).get('current') or ''))
 
-by_task = {tr.get('taskId'): tr for tr in (attempt_obj.get('taskRunList') or []) if tr.get('taskId')}
+def wait_latest(flow_id: str):
+    latest = None
+    for _ in range(90):
+        search = get_json(f"/api/v1/{tenant}/executions/search?namespace={namespace}&flowId={flow_id}&size=20")
+        results = search.get('results') or []
 
-bs = by_task.get('brain_strategy')
-if bs:
-    outs = bs.get('outputs') or {}
-    code = outs.get('code')
-    print('brain_strategy_code=' + str(code))
+        candidates = []
+        for r in results:
+            eid = r.get('id')
+            if not eid:
+                continue
+            try:
+                ex = get_json(f"/api/v1/{tenant}/executions/{eid}")
+            except Exception:
+                continue
+            dt = execution_start_dt(ex)
+            if start_dt and dt and dt < start_dt:
+                continue
+            candidates.append((dt or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc), ex))
 
-hc = by_task.get('hand_cline')
-if hc:
-    outs = hc.get('outputs') or {}
-    of = outs.get('outputFiles') or {}
-    if isinstance(of, dict):
-        print('hand_cline_output_files=' + ','.join(of.keys()))
+        candidates.sort(key=lambda t: t[0], reverse=True)
+        if candidates:
+            latest = candidates[0][1]
+            state = (latest.get('state') or {}).get('current')
+            if state not in ('CREATED', 'QUEUED', 'RUNNING'):
+                return latest
+
+        time.sleep(2)
+
+    return latest
+
+
+pipeline = None
+if intake_execution_id:
+    intake = wait_execution(intake_execution_id)
+    sub_id = find_subflow_execution_id(intake, 'start_pipeline')
+    if sub_id:
+        pipeline = wait_execution(sub_id)
+
+if not pipeline:
+    pipeline = wait_latest('self_heal_pipeline')
+
+if pipeline:
+    print('pipeline_execution_id=' + (pipeline.get('id') or ''))
+    print('pipeline_state=' + ((pipeline.get('state') or {}).get('current') or ''))
+
+    by_task = {tr.get('taskId'): tr for tr in (pipeline.get('taskRunList') or []) if tr.get('taskId')}
+
+    for tid in ('attempt_0', 'attempt_1'):
+        tr = by_task.get(tid)
+        if not tr:
+            continue
+        outs = tr.get('outputs') or {}
+        if isinstance(outs, dict):
+            sub = outs.get('outputs') or {}
+            if isinstance(sub, dict) and 'exit_code' in sub:
+                print(f'{tid}_exit_code=' + str(sub.get('exit_code')))
+
+    gc = by_task.get('guard_checks')
+    if gc:
+        outs = gc.get('outputs') or {}
+        of = outs.get('outputFiles') or {}
+        if isinstance(of, dict):
+            print('guard_output_files=' + ','.join(of.keys()))
+    else:
+        print('guard_checks=missing')
+
+attempt = wait_latest('self_heal_attempt')
+if attempt:
+    print('attempt_execution_id=' + (attempt.get('id') or ''))
+    print('attempt_state=' + ((attempt.get('state') or {}).get('current') or ''))
+    by_task = {tr.get('taskId'): tr for tr in (attempt.get('taskRunList') or []) if tr.get('taskId')}
+    bs = by_task.get('brain_strategy')
+    if bs:
+        outs = bs.get('outputs') or {}
+        code = outs.get('code')
+        print('brain_strategy_code=' + str(code))
+    hc = by_task.get('hand_cline')
+    if hc:
+        outs = hc.get('outputs') or {}
+        of = outs.get('outputFiles') or {}
+        if isinstance(of, dict):
+            print('hand_cline_output_files=' + ','.join(of.keys()))
 PY
 
 exit 0

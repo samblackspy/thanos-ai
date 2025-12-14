@@ -24,7 +24,7 @@ tasks:
 
   - id: maybe_retry
     type: io.kestra.plugin.core.flow.If
-    condition: "{{ outputs.attempt_0.outputs.exit_code != 0 }}"
+    condition: "{{ ((outputs.attempt_0.outputs.exit_code ?? 1) ~ '') != '0' }}"
     then:
       - id: attempt_1
         type: io.kestra.plugin.core.flow.Subflow
@@ -36,6 +36,109 @@ tasks:
           attempt_number: 1
           previous_failure_log: "{{ outputs.attempt_0.outputs.failure_log }}"
 
+  - id: fail_if_all_failed
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ ((outputs.attempt_0.outputs.exit_code ?? 1) ~ '') != '0' and ((outputs.attempt_1 ?? null) != null) and (((outputs.attempt_1.outputs.exit_code ?? 1) ~ '') != '0') }}"
+    then:
+      - id: fail_pipeline
+        type: io.kestra.plugin.scripts.shell.Commands
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+          containerImage: thanos/kitchen-sink-runner:latest
+        commands:
+          - |
+            bash -lc 'exit 1'
+
+  - id: guard_on_success
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ ((outputs.attempt_0.outputs.exit_code ?? 1) ~ '') == '0' or (((outputs.attempt_1 ?? null) != null) and (((outputs.attempt_1.outputs.exit_code ?? 1) ~ '') == '0')) }}"
+    then:
+      - id: guard_checks
+        type: io.kestra.plugin.scripts.shell.Commands
+        containerImage: thanos/kitchen-sink-runner:latest
+        taskRunner:
+          type: io.kestra.plugin.scripts.runner.docker.Docker
+        env:
+          GITHUB_TOKEN: "{{ secret('GITHUB_TOKEN') ?? '' }}"
+          PATCH_DIFF_B64: "{{ ((outputs.attempt_0.outputs.exit_code ?? 1) ~ '') != '0' ? (((outputs.attempt_1 ?? null) != null) ? (outputs.attempt_1.outputs.patch_diff_b64 ?? '') : '') : (outputs.attempt_0.outputs.patch_diff_b64 ?? '') }}"
+        outputFiles:
+          - guard.log
+        commands:
+          - |
+            bash -lc '
+              set -euo pipefail
+
+              log_file="{{ workingDir }}/guard.log"
+              : > "$log_file"
+
+              repo_dir="{{ workingDir }}/repo"
+              rm -rf "$repo_dir"
+              mkdir -p "$repo_dir"
+
+              repo_full_name="{{ inputs.payload.repository.full_name ?? '' }}"
+              repo_clone_url="{{ inputs.payload.repository.clone_url ?? '' }}"
+
+              if [ -z "$repo_clone_url" ] && [ -n "$repo_full_name" ]; then
+                repo_clone_url="https://github.com/${repo_full_name}.git"
+              fi
+
+              if [ -n "${GITHUB_TOKEN:-}" ] && [ -n "$repo_full_name" ]; then
+                repo_clone_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${repo_full_name}.git"
+              fi
+
+              if [ -z "$repo_clone_url" ]; then
+                echo "Guard: missing repository clone URL" | tee -a "$log_file"
+                exit 20
+              fi
+
+              (
+                cd "{{ workingDir }}" &&
+                GIT_TERMINAL_PROMPT=0 git clone --depth 50 "$repo_clone_url" repo
+              ) 2>&1 | tee -a "$log_file"
+
+              patch_file="{{ workingDir }}/patch.diff"
+              if [ -z "${PATCH_DIFF_B64:-}" ]; then
+                echo "Guard: PATCH_DIFF_B64 missing" | tee -a "$log_file"
+                exit 21
+              fi
+
+              echo "$PATCH_DIFF_B64" | base64 -d > "$patch_file"
+              if grep -E -n "(sk-[A-Za-z0-9]{20,}|tgp_[A-Za-z0-9_\-]{10,}|ghp_[A-Za-z0-9]{20,})" "$patch_file" >/dev/null 2>&1; then
+                echo "Guard: potential secret detected in patch.diff" | tee -a "$log_file"
+                grep -E -n "(sk-[A-Za-z0-9]{20,}|tgp_[A-Za-z0-9_\-]{10,}|ghp_[A-Za-z0-9]{20,})" "$patch_file" | tee -a "$log_file" || true
+                exit 22
+              fi
+
+              if grep -q "^diff --git " "$patch_file"; then
+                (
+                  cd "$repo_dir" &&
+                  git apply --whitespace=nowarn "$patch_file"
+                ) 2>&1 | tee -a "$log_file"
+              else
+                echo "Guard: no patch to apply" | tee -a "$log_file"
+              fi
+
+              if [ -d "$repo_dir/tests" ] || [ -f "$repo_dir/pytest.ini" ] || [ -f "$repo_dir/pyproject.toml" ]; then
+                (
+                  cd "$repo_dir" &&
+                  python3 -m pytest -q
+                ) 2>&1 | tee -a "$log_file" || exit 23
+              else
+                echo "Guard: skipping pytest (no obvious python test config)" | tee -a "$log_file"
+              fi
+
+              if command -v pre-commit >/dev/null 2>&1 && [ -f "$repo_dir/.pre-commit-config.yaml" ]; then
+                (
+                  cd "$repo_dir" &&
+                  pre-commit run --all-files
+                ) 2>&1 | tee -a "$log_file" || exit 24
+              else
+                echo "Guard: skipping pre-commit (not installed or no config)" | tee -a "$log_file"
+              fi
+
+              echo "Guard: OK" | tee -a "$log_file"
+            '
+
   - id: final_exit
     type: io.kestra.plugin.core.debug.Return
-    format: "{{ outputs.attempt_0.outputs.exit_code != 0 ? outputs.attempt_1.outputs.exit_code : outputs.attempt_0.outputs.exit_code }}"
+    format: "{{ ((outputs.attempt_0.outputs.exit_code ?? 1) ~ '') != '0' and ((outputs.attempt_1 ?? null) != null) ? (outputs.attempt_1.outputs.exit_code ?? outputs.attempt_0.outputs.exit_code) : outputs.attempt_0.outputs.exit_code }}"

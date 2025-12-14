@@ -56,9 +56,9 @@ tasks:
 
   - id: hand_cline
     type: io.kestra.plugin.scripts.shell.Commands
+    containerImage: thanos/kitchen-sink-runner:latest
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
-      containerImage: thanos/kitchen-sink-runner:latest
     env:
       OPENAI_API_KEY: "{{ secret('OPENAI_API_KEY') ?? '' }}"
       GITHUB_TOKEN: "{{ secret('GITHUB_TOKEN') ?? '' }}"
@@ -121,17 +121,28 @@ tasks:
 
           if [ -n "${OPENAI_API_KEY:-}" ]; then
             export OPENAI_API_KEY
-            cline auth openai "$OPENAI_API_KEY" || true
-            cline config set open-ai-api-key="$OPENAI_API_KEY" || cline config set openai-api-key="$OPENAI_API_KEY" || true
+            if ! script -q -e -c "cline -F plain auth -p openai-native -k \"${OPENAI_API_KEY}\" -m gpt-4o-mini" /dev/null; then
+              if ! script -q -e -c "cline -F plain auth openai-native \"${OPENAI_API_KEY}\"" /dev/null; then
+                echo "Cline auth failed" | tee -a "$log_file"
+                echo "::{\"outputs\":{\"exit_code\":5}}::"
+                echo "exit_code=5" | tee "$failure_file"
+                exit 0
+              fi
+            fi
+
+            cline -F plain config set act-mode-api-provider=openai-native || true
+            cline -F plain config set plan-mode-api-provider=openai-native || true
+            cline -F plain config set strict-plan-mode-enabled=false || true
+            cline -F plain config set mode=act || true
           fi
 
           echo "Running Cline attempt={{ inputs.attempt_number }}" | tee -a "$log_file"
           prompt_b64="{{ outputs.brain_handoff_prompt_b64.value }}"
           echo "$prompt_b64" | base64 -d > "{{ workingDir }}/cline_prompt.txt"
-          prompt="$(cat \"{{ workingDir }}/cline_prompt.txt\")"
+          prompt="$(cat {{ workingDir }}/cline_prompt.txt)"
           (
             cd "$repo_dir" &&
-            cline -y -o "$prompt"
+            script -q -e -c "cline -F plain -y -m act -o \"${prompt}\"" /dev/null
           ) 2>&1 | tee -a "$log_file"
           code=$?
 
@@ -181,8 +192,14 @@ tasks:
 
 outputs:
   - id: exit_code
-    type: INT
-    value: "{{ outputs.hand_cline.vars.exit_code }}"
+    type: STRING
+    value: "{{ ((outputs.hand_cline.vars.exit_code ?? 1) ~ '') }}"
   - id: failure_log
     type: STRING
     value: "{{ outputs.collect_failure.value }}"
+  - id: patch_diff
+    type: STRING
+    value: "{{ read(outputs.hand_cline.outputFiles['patch.diff']) }}"
+  - id: patch_diff_b64
+    type: STRING
+    value: "{{ read(outputs.hand_cline.outputFiles['patch.diff']) | base64encode }}"
