@@ -147,6 +147,30 @@ thanos-ai/
 - **Vercel**: Real-time monitoring dashboard
 - **CodeRabbit**: Automated PR code reviews
 
+## Quick Demo
+
+```bash
+# 1. Start infrastructure
+docker compose up -d
+
+# 2. Check flows loaded
+curl -s -u "admin@kestra.io:Admin1234" http://localhost:8080/api/v1/flows/thanos
+
+# 3. Trigger pipeline
+curl -s -u "admin@kestra.io:Admin1234" \
+  -X POST "http://localhost:8080/api/v1/executions/trigger/thanos/self_heal_pipeline" \
+  -H "Content-Type: multipart/form-data" \
+  -F 'payload={"action":"opened","repository":{"full_name":"samblackspy/thanos-ai"},"issue":{"number":99,"title":"Fix typo","body":"Fix the bug"}}'
+
+# 4. Open Kestra UI
+open http://localhost:8080
+
+# 5. Open Dashboard
+open https://thanosai.vercel.app
+```
+
+Or run the demo script: `./demo.sh commands`
+
 ---
 
 *Thanos AI - Because even open source repos deserve a superhero.*
