@@ -56,9 +56,9 @@ tasks:
 
   - id: hand_cline
     type: io.kestra.plugin.scripts.shell.Commands
-    containerImage: thanos/kitchen-sink-runner:latest
     taskRunner:
       type: io.kestra.plugin.scripts.runner.docker.Docker
+      image: thanos/kitchen-sink-runner:latest
     env:
       OPENAI_API_KEY: "{{ secret('OPENAI_API_KEY') ?? '' }}"
       GITHUB_TOKEN: "{{ secret('GITHUB_TOKEN') ?? '' }}"

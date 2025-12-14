@@ -2,26 +2,8 @@ id: issue_opened_intake
 namespace: thanos
 
 description: |
-  Webhook entrypoint for GitHub issues. Starts the self-heal pipeline.
-
-inputs:
-  - id: payload
-    type: JSON
-    required: false
-
-tasks:
-  - id: log_event
-    type: io.kestra.plugin.core.log.Log
-    message: |
-      received webhook: body={{ (trigger is defined and trigger.body is defined) ? trigger.body : inputs.payload }}
-
-  - id: start_pipeline
-    type: io.kestra.plugin.core.flow.Subflow
-    namespace: thanos
-    flowId: self_heal_pipeline
-    wait: false
-    inputs:
-      payload: "{{ (trigger is defined and trigger.body is defined) ? trigger.body : inputs.payload }}"
+  Webhook entrypoint for GitHub issue events.
+  Triggers the self_heal_pipeline when an issue is opened.
 
 triggers:
   - id: github
@@ -29,4 +11,17 @@ triggers:
     key: "{{ secret('WEBHOOK_KEY') }}"
     conditions:
       - type: io.kestra.plugin.core.condition.Expression
-        expression: "{{ ((trigger.body.action ?? '') == 'opened') and (((trigger.body.repository.full_name ?? '') != '') or ((trigger.body.repository.clone_url ?? '') != '')) and ((trigger.body.issue.title ?? '') != '') }}"
+        expression: "{{ trigger.body.action == 'opened' }}"
+
+tasks:
+  - id: log_event
+    type: io.kestra.plugin.core.debug.Return
+    format: "Received issue event: {{ trigger.body.action }} for {{ trigger.body.repository.full_name }}"
+
+  - id: start_pipeline
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: thanos
+    flowId: self_heal_pipeline
+    wait: false
+    inputs:
+      payload: "{{ trigger.body }}"
