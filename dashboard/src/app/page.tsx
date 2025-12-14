@@ -124,23 +124,27 @@ function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
 }
 
 export default function Home() {
-  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [pipelines, setPipelines] = useState<Pipeline[]>(DEMO_PIPELINES);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [usingDemo, setUsingDemo] = useState(true);
 
   const fetchPipelines = async () => {
     setLoading(true);
     try {
       const res = await fetch("/api/pipelines");
       const data = await res.json();
-      if (data.pipelines) {
+      if (data.pipelines && data.pipelines.length > 0) {
         setPipelines(data.pipelines);
+        setUsingDemo(false);
         setError(null);
-      } else if (data.error) {
-        setError(data.error);
+      } else {
+        setPipelines(DEMO_PIPELINES);
+        setUsingDemo(true);
       }
     } catch (err) {
-      setError("Failed to fetch pipelines");
+      setPipelines(DEMO_PIPELINES);
+      setUsingDemo(true);
       console.error(err);
     }
     setLoading(false);
