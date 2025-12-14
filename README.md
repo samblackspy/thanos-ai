@@ -116,8 +116,8 @@ thanos-ai/
 ├── kestra/
 │   └── flows/                    # Kestra workflow definitions
 │       ├── main_thanos.issue_opened_intake.yml
-│       ├── main_thanos.self_heal_attempt.yml
-│       └── main_thanos.self_heal_pipeline.yml
+        ├── main_thanos_self_heal_attempt.yml
+        └── main_thanos.self_heal_pipeline.yml
 ├── dashboard/                    # Next.js monitoring dashboard
 │   └── src/app/
 │       ├── page.tsx              # Main dashboard UI
@@ -142,6 +142,7 @@ thanos-ai/
 
 ### Prize Categories
 
+- **Cline**: Headless CLI execution for autonomous code fixes
 - **Kestra**: Orchestration with AI Agent, retry logic, webhook triggers
 - **Oumi**: RL fine-tuning pipeline for code fixing models
 - **Vercel**: Real-time monitoring dashboard
