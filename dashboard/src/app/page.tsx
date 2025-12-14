@@ -18,13 +18,13 @@ interface Pipeline {
 }
 
 function StatusBadge({ status }: { status: PipelineStatus }) {
-  const config = {
-    running: { icon: Clock, color: "text-blue-500 bg-blue-500/10", label: "Running" },
-    success: { icon: CheckCircle2, color: "text-green-500 bg-green-500/10", label: "Success" },
-    failed: { icon: XCircle, color: "text-red-500 bg-red-500/10", label: "Failed" },
-    pending: { icon: Clock, color: "text-zinc-400 bg-zinc-400/10", label: "Pending" },
+  const confg = {
+    running: { icon: Clock, color: "text-blue-500 bg-blue-500/10", label: "Runnng" },
+    success: { icon: CheckCircle2, color: "text-green-500 bg-green-500/10", label: "Sucess" },
+    failed: { icon: XCircle, color: "text-red-500 bg-red-500/10", label: "Faild" },
+    pending: { icon: Clock, color: "text-zinc-400 bg-zinc-400/10", label: "Pendng" },
   };
-  const { icon: Icon, color, label } = config[status];
+  const { icon: Icon, color, label } = confg[status];
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${color}`}>
       <Icon className="w-3.5 h-3.5" />
