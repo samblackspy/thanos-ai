@@ -127,7 +127,7 @@ thanos-ai/
 
 ## Links
 
-- **Dashboard**: [thanos-ai-dashboard.vercel.app](https://dashboard-qzn2ght6t-samblackspys-projects.vercel.app)
+- **Dashboard**: [thanosai.vercel.app](https://thanosai.vercel.app)
 - **GitHub**: [github.com/samblackspy/thanos-ai](https://github.com/samblackspy/thanos-ai)
 - **Kestra**: http://localhost:8080 (local)
 
