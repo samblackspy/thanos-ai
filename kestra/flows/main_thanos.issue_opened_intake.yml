@@ -13,7 +13,7 @@ tasks:
   - id: log_event
     type: io.kestra.plugin.core.log.Log
     message: |
-      received webhook: action={{ trigger.body.action ?? inputs.payload.action ?? 'unknown' }}
+      received webhook: body={{ (trigger is defined and trigger.body is defined) ? trigger.body : inputs.payload }}
 
   - id: start_pipeline
     type: io.kestra.plugin.core.flow.Subflow
@@ -21,7 +21,7 @@ tasks:
     flowId: self_heal_pipeline
     wait: false
     inputs:
-      payload: "{{ trigger.body ?? inputs.payload }}"
+      payload: "{{ (trigger is defined and trigger.body is defined) ? trigger.body : inputs.payload }}"
 
 triggers:
   - id: github
@@ -29,4 +29,4 @@ triggers:
     key: "{{ secret('WEBHOOK_KEY') }}"
     conditions:
       - type: io.kestra.plugin.core.condition.Expression
-        expression: "{{ (trigger.body.action ?? inputs.payload.action) == 'opened' and (trigger.body.issue ?? inputs.payload.issue) and (trigger.body.repository ?? inputs.payload.repository) }}"
+        expression: "{{ ((trigger.body.action ?? '') == 'opened') and (((trigger.body.repository.full_name ?? '') != '') or ((trigger.body.repository.clone_url ?? '') != '')) and ((trigger.body.issue.title ?? '') != '') }}"

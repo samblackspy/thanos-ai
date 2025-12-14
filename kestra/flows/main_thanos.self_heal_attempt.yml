@@ -30,11 +30,13 @@ tasks:
     uri: "https://api.together.xyz/v1/chat/completions"
     method: POST
     contentType: "application/json"
+    options:
+      allowFailed: true
     headers:
       Authorization: "Bearer {{ secret('TOGETHER_API_KEY') }}"
     body: |
       {
-        "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+        "model": "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
         "messages": [
           {
             "role": "system",
@@ -50,7 +52,7 @@ tasks:
 
   - id: brain_handoff_prompt_b64
     type: io.kestra.plugin.core.debug.Return
-    format: "{{ fromJson(fromJson(outputs.brain_strategy.body).choices[0].message.content).handoff_prompt | base64encode }}"
+    format: "{{ (outputs.brain_strategy.code ?? 0) == 200 ? (fromJson(fromJson(outputs.brain_strategy.body).choices[0].message.content).handoff_prompt | base64encode) : ((('Together API error. code=' ~ (outputs.brain_strategy.code ?? 'unknown')) ~ ' body=' ~ (outputs.brain_strategy.body ?? '')) | base64encode) }}"
 
   - id: hand_cline
     type: io.kestra.plugin.scripts.shell.Commands
@@ -70,6 +72,15 @@ tasks:
           set +e
           set -o pipefail
 
+          log_file="{{ workingDir }}/cline.log"
+          failure_file="{{ workingDir }}/failure.log"
+          patch_file="{{ workingDir }}/patch.diff"
+
+          mkdir -p "{{ workingDir }}"
+          : > "$log_file"
+          : > "$failure_file"
+          : > "$patch_file"
+
           export CLINE_DIR="{{ workingDir }}/.cline"
           mkdir -p "$CLINE_DIR"
 
@@ -86,9 +97,9 @@ tasks:
           fi
 
           if [ -z "$repo_clone_url" ]; then
-            echo "No repository clone URL found in payload" | tee -a cline.log
+            echo "No repository clone URL found in payload" | tee -a "$log_file"
             echo "::{\"outputs\":{\"exit_code\":2}}::"
-            echo "exit_code=2" | tee failure.log
+            echo "exit_code=2" | tee "$failure_file"
             exit 0
           fi
 
@@ -99,12 +110,12 @@ tasks:
           (
             cd "{{ workingDir }}" &&
             GIT_TERMINAL_PROMPT=0 git clone --depth 50 "$repo_clone_url" repo
-          ) 2>&1 | tee -a cline.log
+          ) 2>&1 | tee -a "$log_file"
 
           if [ "${PIPESTATUS[0]}" -ne 0 ]; then
-            echo "Repo clone failed" | tee -a cline.log
+            echo "Repo clone failed" | tee -a "$log_file"
             echo "::{\"outputs\":{\"exit_code\":3}}::"
-            echo "exit_code=3" | tee failure.log
+            echo "exit_code=3" | tee "$failure_file"
             exit 0
           fi
 
@@ -114,24 +125,22 @@ tasks:
             cline config set open-ai-api-key="$OPENAI_API_KEY" || cline config set openai-api-key="$OPENAI_API_KEY" || true
           fi
 
-          : > "{{ workingDir }}/patch.diff"
-
-          echo "Running Cline attempt={{ inputs.attempt_number }}" | tee -a cline.log
+          echo "Running Cline attempt={{ inputs.attempt_number }}" | tee -a "$log_file"
           prompt_b64="{{ outputs.brain_handoff_prompt_b64.value }}"
           echo "$prompt_b64" | base64 -d > "{{ workingDir }}/cline_prompt.txt"
           prompt="$(cat \"{{ workingDir }}/cline_prompt.txt\")"
           (
             cd "$repo_dir" &&
             cline -y -o "$prompt"
-          ) 2>&1 | tee -a cline.log
+          ) 2>&1 | tee -a "$log_file"
           code=$?
 
           if [ "$code" -eq 0 ]; then
             if git -C repo diff --quiet; then
-              echo "No changes detected; skipping commit/push" | tee -a cline.log
+              echo "No changes detected; skipping commit/push" | tee -a "$log_file"
             else
               if [ -z "${GITHUB_TOKEN:-}" ]; then
-                echo "GITHUB_TOKEN not set; skipping commit/push" | tee -a cline.log
+                echo "GITHUB_TOKEN not set; skipping commit/push" | tee -a "$log_file"
               else
                 branch="fix/issue-${issue_number:-unknown}-attempt-{{ inputs.attempt_number }}"
                 (
@@ -142,10 +151,10 @@ tasks:
                   git add -A &&
                   git commit -m "Fix issue #${issue_number:-unknown}" &&
                   git push origin "$branch"
-                ) 2>&1 | tee -a cline.log
+                ) 2>&1 | tee -a "$log_file"
 
                 if [ "${PIPESTATUS[0]}" -ne 0 ]; then
-                  echo "Push failed" | tee -a cline.log
+                  echo "Push failed" | tee -a "$log_file"
                   code=4
                 fi
               fi
@@ -154,10 +163,14 @@ tasks:
 
           (
             cd "{{ workingDir }}" &&
-            git -C repo diff > patch.diff
+            git -C repo diff > "$patch_file"
           ) 2>/dev/null || true
 
-          echo "exit_code=${code}" | tee failure.log
+          if [ ! -s "$patch_file" ]; then
+            printf "\n" > "$patch_file"
+          fi
+
+          echo "exit_code=${code}" | tee "$failure_file"
           echo "::{\"outputs\":{\"exit_code\":${code}}}::"
           exit 0
         '
