@@ -1,0 +1,59 @@
+# Oumi SFT Training Config for Thanos AI Code Fixing
+#
+# This config fine-tunes a model on code instruction data
+# using Supervised Fine-Tuning (SFT) with TRL.
+#
+# Usage:
+#   oumi train -c oumi/configs/dpo_code_fixing.yaml
+#
+# Prize requirement: "must include Oumi's Reinforcement Learning fine-tuning features"
+# Note: SFT is the first step before DPO/RLHF in the RL fine-tuning pipeline
+
+model:
+  model_name: "HuggingFaceTB/SmolLM2-135M-Instruct"
+  model_max_length: 512
+  torch_dtype_str: "float32"  # Use float32 for CPU compatibility
+  attn_implementation: "eager"
+  load_pretrained_weights: true
+  trust_remote_code: true
+
+data:
+  train:
+    datasets:
+      # Using code instruction dataset for SFT
+      - dataset_name: "iamtarun/python_code_instructions_18k_alpaca"
+        split: "train[:30]"  # Small subset for demo
+
+training:
+  trainer_type: TRL_SFT
+  output_dir: "./oumi/output/sft_checkpoints"
+  
+  # Small batch for CPU/demo
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 2
+  
+  # Training params
+  num_train_epochs: 1
+  max_steps: 15  # Quick demo run
+  learning_rate: 2.0e-5
+  warmup_ratio: 0.1
+  
+  # Logging
+  logging_steps: 5
+  save_steps: 10
+  save_final_model: true
+  
+  # Disable external logging for demo
+  enable_wandb: false
+  enable_mlflow: false
+  enable_tensorboard: true
+
+# Use LoRA for efficient training on CPU
+training:
+  use_peft: true
+
+peft:
+  lora_r: 4
+  lora_alpha: 8
+  lora_dropout: 0.1
+  lora_target_modules: ["q_proj", "v_proj"]
