@@ -1,0 +1,5 @@
+oumi>=0.1.0
+torch>=2.0.0
+transformers>=4.35.0
+datasets>=2.14.0
+accelerate>=0.24.0

@@ -1,0 +1,19 @@
+language: en-US
+reviews:
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  path_filters:
+    - "!**/*.md"
+    - "!**/*.lock"
+  path_instructions:
+    - path: "kestra/**/*.yml"
+      instructions: "Review Kestra flow definitions for correctness, proper error handling, and security best practices."
+    - path: "**/*.py"
+      instructions: "Check for Python best practices, type hints, and potential security issues."
+    - path: "**/*.ts"
+      instructions: "Ensure TypeScript best practices, proper typing, and React patterns if applicable."
+chat:
+  auto_reply: true
