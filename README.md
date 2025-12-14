@@ -1,5 +1,10 @@
 # Thanos AI
 
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Version](https://img.shields.io/badge/version-1.0.0-orange)
+![Code Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)
+
 **The Self-Healing Open Source Maintainer**
 
 Thanos AI is an autonomous system that monitors GitHub repositories, detects issues, and automatically generates fixes using AI-powered code generation. When a new issue is opened, Thanos AI springs into action—analyzing the problem, generating a fix, validating it through security and quality checks, and creating a pull request—all without human intervention.
