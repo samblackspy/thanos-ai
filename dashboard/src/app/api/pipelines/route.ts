@@ -2,12 +2,32 @@ import { NextResponse } from "next/server";
 
 const KESTRA_URL = process.env.KESTRA_URL || "http://localhost:8080";
 const KESTRA_AUTH = process.env.KESTRA_AUTH || "admin@kestra.io:Admin1234";
+const FETCH_TIMEOUT_MS = 10000;
+
+interface KPipelineExecution {
+  id: string;
+  state?: { current?: string; startDate?: string };
+  inputs?: { payload?: { issue?: { number?: number; title?: string }; repository?: { full_name?: string } } };
+  taskRunList?: Array<{ taskId?: string; state?: { current?: string }; outputs?: { outputs?: { exit_code?: number } } }>;
+}
+
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export async function GET() {
   try {
     const authHeader = `Basic ${Buffer.from(KESTRA_AUTH).toString("base64")}`;
     
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${KESTRA_URL}/api/v1/main/executions?namespace=thanos&flowId=self_heal_pipeline&size=20`,
       {
         headers: {
@@ -15,12 +35,14 @@ export async function GET() {
           Accept: "application/json",
         },
         cache: "no-store",
-      }
+      },
+      FETCH_TIMEOUT_MS
     );
 
     if (!response.ok) {
+      console.error(`Kestra API returned ${response.status}: ${response.statusText}`);
       return NextResponse.json(
-        { error: `Kestra API error: ${response.status}` },
+        { error: `Kestra API error: ${response.status}`, details: response.statusText },
         { status: response.status }
       );
     }
