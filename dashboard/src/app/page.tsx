@@ -21,7 +21,7 @@ const DEMO_PIPELINES: Pipeline[] = [
   {
     id: "1NqSCaFSw57jiiBVDu9qN2",
     issueNumber: 7,
-    issueTitle: "Fix typos in StatusBadge component",
+    issueTitle: "Fix typo in StatusBadge component",
     repo: "samblackspy/thanos-ai",
     status: "success",
     attempts: 1,
